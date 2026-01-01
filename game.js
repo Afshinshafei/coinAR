@@ -1,14 +1,25 @@
-// AR Coin Collector Game Logic
+// AR Coin Collector Game Logic - Using Three.js
 
 class ARCoinGame {
     constructor() {
         this.score = 0;
         this.coins = [];
-        this.gameState = 'menu'; // menu, playing, gameover
+        this.gameState = 'menu';
         this.totalCoins = 8;
-        this.scene = null;
-        this.coinsContainer = null;
         this.cameraStream = null;
+        
+        // Three.js objects
+        this.scene = null;
+        this.camera = null;
+        this.renderer = null;
+        this.raycaster = null;
+        this.mouse = new THREE.Vector2();
+        this.clock = new THREE.Clock();
+        this.coinModel = null;
+        
+        // Device orientation
+        this.deviceOrientation = { alpha: 0, beta: 0, gamma: 0 };
+        this.orientationEnabled = false;
         
         // DOM Elements
         this.startScreen = document.getElementById('startScreen');
@@ -22,60 +33,17 @@ class ARCoinGame {
         this.loadingIndicator = document.getElementById('loadingIndicator');
         this.instructionsOverlay = document.getElementById('instructionsOverlay');
         this.cameraFeed = document.getElementById('cameraFeed');
+        this.gameCanvas = document.getElementById('gameCanvas');
+        this.coinsLeft = document.getElementById('coinsLeft');
+        this.crosshair = document.getElementById('crosshair');
         
         this.init();
     }
 
     init() {
-        // Check camera support
         this.checkARSupport();
-        
-        // Event listeners
         this.startButton.addEventListener('click', () => this.startGame());
         this.restartButton.addEventListener('click', () => this.restartGame());
-        
-        // Register custom A-Frame components
-        this.registerComponents();
-    }
-
-    registerComponents() {
-        // Register float animation component
-        if (!AFRAME.components['float-animation']) {
-            AFRAME.registerComponent('float-animation', {
-                schema: {
-                    amplitude: { type: 'number', default: 0.15 },
-                    speed: { type: 'number', default: 1.5 }
-                },
-                init: function() {
-                    this.originalY = this.el.object3D.position.y;
-                    this.time = Math.random() * Math.PI * 2; // Random phase
-                },
-                tick: function(time, delta) {
-                    this.time += (delta / 1000) * this.data.speed;
-                    const newY = this.originalY + Math.sin(this.time) * this.data.amplitude;
-                    this.el.object3D.position.y = newY;
-                }
-            });
-        }
-
-        // Register glow effect component
-        if (!AFRAME.components['coin-glow']) {
-            AFRAME.registerComponent('coin-glow', {
-                init: function() {
-                    this.el.addEventListener('model-loaded', () => {
-                        const mesh = this.el.getObject3D('mesh');
-                        if (mesh) {
-                            mesh.traverse((node) => {
-                                if (node.isMesh && node.material) {
-                                    node.material.emissive = new THREE.Color(0xffd700);
-                                    node.material.emissiveIntensity = 0.3;
-                                }
-                            });
-                        }
-                    });
-                }
-            });
-        }
     }
 
     checkARSupport() {
@@ -87,7 +55,7 @@ class ARCoinGame {
     showARNotSupported() {
         this.arNotSupported.classList.remove('hidden');
         this.startButton.disabled = true;
-        this.startButton.textContent = 'Camera Not Available';
+        this.startButton.innerHTML = '<span class="btn-icon">&#10060;</span> Camera Not Available';
     }
 
     async startGame() {
@@ -96,21 +64,31 @@ class ARCoinGame {
         this.coins = [];
         this.updateScore();
         
-        // Show loading
         this.loadingIndicator.classList.remove('hidden');
         
         try {
-            // Request camera access
             await this.initCamera();
             
-            // Hide start screen, show game screen
             this.startScreen.classList.remove('active');
             this.gameScreen.classList.add('active');
             
-            // Initialize AR scene
-            this.initAR();
+            await this.initThreeJS();
+            await this.loadCoinModel();
+            this.spawnCoins();
+            this.setupControls();
+            this.animate();
+            
+            this.loadingIndicator.classList.add('hidden');
+            
+            // Hide instructions after delay
+            setTimeout(() => {
+                if (this.instructionsOverlay) {
+                    this.instructionsOverlay.classList.add('fade-out');
+                }
+            }, 4000);
+            
         } catch (error) {
-            console.error('Failed to start camera:', error);
+            console.error('Failed to start game:', error);
             this.loadingIndicator.classList.add('hidden');
             this.showARNotSupported();
         }
@@ -119,254 +97,459 @@ class ARCoinGame {
     async initCamera() {
         const constraints = {
             video: {
-                facingMode: 'environment', // Use back camera
-                width: { ideal: 1280 },
-                height: { ideal: 720 }
+                facingMode: { ideal: 'environment' },
+                width: { ideal: 1920 },
+                height: { ideal: 1080 }
             },
             audio: false
         };
 
         try {
             this.cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
-            this.cameraFeed.srcObject = this.cameraStream;
-            
-            // Wait for video to be ready
-            return new Promise((resolve) => {
-                this.cameraFeed.onloadedmetadata = () => {
-                    this.cameraFeed.play();
-                    resolve();
-                };
-            });
-        } catch (error) {
-            // Try front camera if back camera fails
-            constraints.video.facingMode = 'user';
-            this.cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
-            this.cameraFeed.srcObject = this.cameraStream;
-            
-            return new Promise((resolve) => {
-                this.cameraFeed.onloadedmetadata = () => {
-                    this.cameraFeed.play();
-                    resolve();
-                };
-            });
+        } catch (err) {
+            // Fallback to any camera
+            this.cameraStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
         }
+        
+        this.cameraFeed.srcObject = this.cameraStream;
+        
+        return new Promise((resolve, reject) => {
+            this.cameraFeed.onloadedmetadata = () => {
+                this.cameraFeed.play()
+                    .then(resolve)
+                    .catch(reject);
+            };
+            this.cameraFeed.onerror = reject;
+        });
     }
 
-    initAR() {
-        this.scene = document.querySelector('a-scene');
-        this.coinsContainer = document.getElementById('coinsContainer');
+    async initThreeJS() {
+        // Create scene
+        this.scene = new THREE.Scene();
         
-        // Wait for scene to be loaded
-        if (this.scene.hasLoaded) {
-            this.onSceneLoaded();
-        } else {
-            this.scene.addEventListener('loaded', () => {
-                this.onSceneLoaded();
-            });
-        }
+        // Create camera
+        this.camera = new THREE.PerspectiveCamera(
+            75,
+            window.innerWidth / window.innerHeight,
+            0.1,
+            1000
+        );
+        this.camera.position.set(0, 0, 0);
+        
+        // Create renderer with transparency
+        this.renderer = new THREE.WebGLRenderer({
+            canvas: this.gameCanvas,
+            alpha: true,
+            antialias: true
+        });
+        this.renderer.setSize(window.innerWidth, window.innerHeight);
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        this.renderer.setClearColor(0x000000, 0); // Fully transparent
+        this.renderer.outputEncoding = THREE.sRGBEncoding;
+        
+        // Add lights
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        this.scene.add(ambientLight);
+        
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+        directionalLight.position.set(5, 10, 5);
+        this.scene.add(directionalLight);
+        
+        const goldLight = new THREE.PointLight(0xffd700, 0.5, 20);
+        goldLight.position.set(0, 2, 0);
+        this.scene.add(goldLight);
+        
+        // Create raycaster
+        this.raycaster = new THREE.Raycaster();
+        
+        // Handle resize
+        window.addEventListener('resize', () => this.onWindowResize());
     }
 
-    onSceneLoaded() {
-        // Hide loading indicator
-        this.loadingIndicator.classList.add('hidden');
+    async loadCoinModel() {
+        return new Promise((resolve, reject) => {
+            const loader = new THREE.GLTFLoader();
+            loader.load(
+                'Copilot3D-d9aba749-7d22-4170-8f7d-3991895511f0.glb',
+                (gltf) => {
+                    this.coinModel = gltf.scene;
+                    
+                    // Make the coin golden and emissive
+                    this.coinModel.traverse((child) => {
+                        if (child.isMesh) {
+                            child.material = new THREE.MeshStandardMaterial({
+                                color: 0xffd700,
+                                metalness: 0.8,
+                                roughness: 0.2,
+                                emissive: 0xffa500,
+                                emissiveIntensity: 0.3
+                            });
+                        }
+                    });
+                    
+                    resolve();
+                },
+                undefined,
+                (error) => {
+                    console.warn('Could not load GLB model, using fallback:', error);
+                    // Create fallback coin geometry
+                    this.coinModel = this.createFallbackCoin();
+                    resolve();
+                }
+            );
+        });
+    }
+
+    createFallbackCoin() {
+        const group = new THREE.Group();
         
-        // Spawn coins
-        this.spawnCoins();
+        // Coin body
+        const geometry = new THREE.CylinderGeometry(0.3, 0.3, 0.05, 32);
+        const material = new THREE.MeshStandardMaterial({
+            color: 0xffd700,
+            metalness: 0.9,
+            roughness: 0.1,
+            emissive: 0xffa500,
+            emissiveIntensity: 0.3
+        });
+        const coin = new THREE.Mesh(geometry, material);
+        coin.rotation.x = Math.PI / 2;
+        group.add(coin);
         
-        // Hide instructions after a few seconds
-        setTimeout(() => {
-            if (this.instructionsOverlay) {
-                this.instructionsOverlay.style.opacity = '0';
-                setTimeout(() => {
-                    this.instructionsOverlay.style.display = 'none';
-                }, 500);
-            }
-        }, 4000);
+        // Add ring detail
+        const ringGeometry = new THREE.TorusGeometry(0.25, 0.02, 8, 32);
+        const ring = new THREE.Mesh(ringGeometry, material);
+        ring.position.z = 0.03;
+        group.add(ring);
+        
+        const ring2 = ring.clone();
+        ring2.position.z = -0.03;
+        group.add(ring2);
+        
+        return group;
     }
 
     spawnCoins() {
-        // Create coins floating in 3D space around the user
         for (let i = 0; i < this.totalCoins; i++) {
             this.createCoin(i);
         }
+        this.updateCoinsRemaining();
     }
 
     createCoin(index) {
-        // Calculate position in a sphere around user
+        // Clone the coin model
+        const coin = this.coinModel.clone();
+        
+        // Calculate position around the user
         const angle = (Math.PI * 2 * index) / this.totalCoins;
-        const distance = 3 + Math.random() * 2; // 3 to 5 meters away
+        const distance = 4 + Math.random() * 3; // 4 to 7 meters away
         const x = Math.cos(angle) * distance;
-        const z = -Math.abs(Math.sin(angle) * distance); // Negative Z is in front
-        const y = 1 + Math.random() * 2; // Height: 1 to 3 meters (floating in air)
+        const z = -Math.abs(Math.sin(angle) * distance) - 2; // Always in front
+        const y = -1 + Math.random() * 3; // -1 to 2 meters (relative to camera)
         
-        // Create coin entity
-        const coin = document.createElement('a-entity');
-        coin.setAttribute('gltf-model', '#coinModel');
-        coin.setAttribute('position', `${x} ${y} ${z}`);
-        coin.setAttribute('scale', '0.5 0.5 0.5');
-        coin.setAttribute('class', 'coin');
-        coin.setAttribute('data-coin-id', index.toString());
-        coin.setAttribute('data-collected', 'false');
+        coin.position.set(x, y, z);
+        coin.scale.set(1.5, 1.5, 1.5);
         
-        // Add spinning animation
-        coin.setAttribute('animation__spin', {
-            property: 'rotation',
-            to: '0 360 0',
-            loop: true,
-            dur: 2000 + Math.random() * 1000,
-            easing: 'linear'
-        });
+        // Store coin data
+        coin.userData = {
+            id: index,
+            collected: false,
+            originalY: y,
+            floatOffset: Math.random() * Math.PI * 2,
+            floatSpeed: 1 + Math.random() * 0.5,
+            floatAmplitude: 0.15 + Math.random() * 0.1,
+            rotationSpeed: 1 + Math.random() * 0.5
+        };
         
-        // Add floating animation
-        coin.setAttribute('float-animation', {
-            amplitude: 0.1 + Math.random() * 0.1,
-            speed: 1 + Math.random() * 0.5
-        });
-        
-        // Add glow effect
-        coin.setAttribute('coin-glow', '');
-        
-        // Add click/touch handler
-        coin.addEventListener('click', (evt) => {
-            evt.stopPropagation();
-            if (coin.getAttribute('data-collected') === 'false') {
-                this.collectCoin(coin);
-            }
-        });
-        
-        // Also handle direct touch on mobile
-        coin.addEventListener('mousedown', (evt) => {
-            if (coin.getAttribute('data-collected') === 'false') {
-                this.collectCoin(coin);
-            }
-        });
-        
-        this.coinsContainer.appendChild(coin);
+        this.scene.add(coin);
         this.coins.push(coin);
     }
 
+    setupControls() {
+        // Touch/click to collect coins
+        this.gameCanvas.addEventListener('click', (e) => this.onCanvasClick(e));
+        this.gameCanvas.addEventListener('touchstart', (e) => this.onCanvasTouch(e), { passive: false });
+        
+        // Device orientation for looking around
+        if (window.DeviceOrientationEvent) {
+            // Request permission for iOS 13+
+            if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+                DeviceOrientationEvent.requestPermission()
+                    .then(response => {
+                        if (response === 'granted') {
+                            this.enableDeviceOrientation();
+                        }
+                    })
+                    .catch(console.error);
+            } else {
+                this.enableDeviceOrientation();
+            }
+        }
+        
+        // Fallback: touch drag to look around
+        let lastTouchX = 0;
+        let lastTouchY = 0;
+        let isDragging = false;
+        
+        this.gameCanvas.addEventListener('touchstart', (e) => {
+            if (e.touches.length === 1) {
+                isDragging = true;
+                lastTouchX = e.touches[0].clientX;
+                lastTouchY = e.touches[0].clientY;
+            }
+        }, { passive: true });
+        
+        this.gameCanvas.addEventListener('touchmove', (e) => {
+            if (!isDragging || !e.touches.length) return;
+            
+            const touchX = e.touches[0].clientX;
+            const touchY = e.touches[0].clientY;
+            
+            const deltaX = (touchX - lastTouchX) * 0.005;
+            const deltaY = (touchY - lastTouchY) * 0.005;
+            
+            this.camera.rotation.y -= deltaX;
+            this.camera.rotation.x = Math.max(-Math.PI/3, Math.min(Math.PI/3, this.camera.rotation.x - deltaY));
+            
+            lastTouchX = touchX;
+            lastTouchY = touchY;
+        }, { passive: true });
+        
+        this.gameCanvas.addEventListener('touchend', () => {
+            isDragging = false;
+        }, { passive: true });
+    }
+
+    enableDeviceOrientation() {
+        this.orientationEnabled = true;
+        window.addEventListener('deviceorientation', (e) => {
+            if (e.alpha !== null) {
+                this.deviceOrientation.alpha = e.alpha;
+                this.deviceOrientation.beta = e.beta;
+                this.deviceOrientation.gamma = e.gamma;
+            }
+        });
+    }
+
+    onCanvasClick(e) {
+        const rect = this.gameCanvas.getBoundingClientRect();
+        this.mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+        this.mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+        this.checkCoinHit();
+    }
+
+    onCanvasTouch(e) {
+        e.preventDefault();
+        if (e.touches.length > 0) {
+            const rect = this.gameCanvas.getBoundingClientRect();
+            this.mouse.x = ((e.touches[0].clientX - rect.left) / rect.width) * 2 - 1;
+            this.mouse.y = -((e.touches[0].clientY - rect.top) / rect.height) * 2 + 1;
+            this.checkCoinHit();
+        }
+    }
+
+    checkCoinHit() {
+        this.raycaster.setFromCamera(this.mouse, this.camera);
+        
+        const collectableCoins = this.coins.filter(c => !c.userData.collected);
+        const intersects = this.raycaster.intersectObjects(collectableCoins, true);
+        
+        if (intersects.length > 0) {
+            // Find the parent coin object
+            let coinObject = intersects[0].object;
+            while (coinObject.parent && !coinObject.userData.id && coinObject.userData.id !== 0) {
+                coinObject = coinObject.parent;
+            }
+            
+            // Find the actual coin in our array
+            const coin = this.coins.find(c => c === coinObject || c.children.includes(coinObject) || this.isDescendant(c, intersects[0].object));
+            
+            if (coin && !coin.userData.collected) {
+                this.collectCoin(coin);
+            }
+        }
+    }
+
+    isDescendant(parent, child) {
+        let current = child;
+        while (current) {
+            if (current === parent) return true;
+            current = current.parent;
+        }
+        return false;
+    }
+
     collectCoin(coin) {
-        if (coin.getAttribute('data-collected') === 'true') return;
+        if (coin.userData.collected) return;
         
-        coin.setAttribute('data-collected', 'true');
+        coin.userData.collected = true;
         
-        // Play collection animation
-        coin.removeAttribute('animation__spin');
-        coin.removeAttribute('float-animation');
+        // Create collection effect
+        this.createCollectEffect(coin.position.clone());
         
-        // Scale up and fade out animation
-        coin.setAttribute('animation__collect', {
-            property: 'scale',
-            to: '1 1 1',
-            dur: 300,
-            easing: 'easeOutQuad'
-        });
+        // Animate coin collection
+        const startScale = coin.scale.x;
+        const startY = coin.position.y;
+        const duration = 300;
+        const startTime = Date.now();
         
-        coin.setAttribute('animation__fade', {
-            property: 'components.material.material.opacity',
-            to: 0,
-            dur: 300,
-            easing: 'easeOutQuad'
-        });
+        const animateCollection = () => {
+            const elapsed = Date.now() - startTime;
+            const progress = Math.min(elapsed / duration, 1);
+            
+            // Scale up and fade
+            const scale = startScale * (1 + progress * 0.5);
+            coin.scale.set(scale, scale, scale);
+            coin.position.y = startY + progress * 0.5;
+            
+            // Fade out by scaling materials
+            coin.traverse((child) => {
+                if (child.isMesh && child.material) {
+                    child.material.opacity = 1 - progress;
+                    child.material.transparent = true;
+                }
+            });
+            
+            if (progress < 1) {
+                requestAnimationFrame(animateCollection);
+            } else {
+                this.scene.remove(coin);
+            }
+        };
         
-        // Create particle effect
-        this.createCollectEffect(coin);
+        animateCollection();
         
         // Update score
         this.score += 10;
         this.updateScore();
+        this.updateCoinsRemaining();
         
-        // Play sound feedback (vibration on mobile)
+        // Vibrate
         if (navigator.vibrate) {
             navigator.vibrate(50);
         }
         
-        // Remove coin after animation
-        setTimeout(() => {
-            if (coin.parentNode) {
-                coin.parentNode.removeChild(coin);
-            }
-        }, 300);
+        // Flash crosshair
+        this.crosshair.classList.add('hit');
+        setTimeout(() => this.crosshair.classList.remove('hit'), 200);
         
-        // Check if all coins collected
-        const remaining = this.coins.filter(c => c.getAttribute('data-collected') === 'false').length;
+        // Check win condition
+        const remaining = this.coins.filter(c => !c.userData.collected).length;
         if (remaining === 0) {
-            setTimeout(() => this.endGame(), 800);
+            setTimeout(() => this.endGame(), 1000);
         }
     }
 
-    createCollectEffect(coin) {
-        const position = coin.getAttribute('position');
+    createCollectEffect(position) {
+        const particleCount = 12;
+        const particles = [];
         
-        // Create sparkle particles
-        for (let i = 0; i < 8; i++) {
-            const particle = document.createElement('a-entity');
-            const angle = (Math.PI * 2 * i) / 8;
-            const speed = 0.5 + Math.random() * 0.5;
-            
-            particle.setAttribute('geometry', {
-                primitive: 'sphere',
-                radius: 0.05
+        for (let i = 0; i < particleCount; i++) {
+            const geometry = new THREE.SphereGeometry(0.05, 8, 8);
+            const material = new THREE.MeshBasicMaterial({
+                color: 0xffd700,
+                transparent: true,
+                opacity: 1
             });
-            particle.setAttribute('material', {
-                color: '#ffd700',
-                emissive: '#ffd700',
-                emissiveIntensity: 1,
-                shader: 'flat'
-            });
-            particle.setAttribute('position', position);
+            const particle = new THREE.Mesh(geometry, material);
             
-            // Animate outward
-            const targetX = parseFloat(position.x) + Math.cos(angle) * speed;
-            const targetY = parseFloat(position.y) + 0.3 + Math.random() * 0.3;
-            const targetZ = parseFloat(position.z) + Math.sin(angle) * speed;
+            particle.position.copy(position);
             
-            particle.setAttribute('animation', {
-                property: 'position',
-                to: `${targetX} ${targetY} ${targetZ}`,
-                dur: 400,
-                easing: 'easeOutQuad'
-            });
+            const angle = (Math.PI * 2 * i) / particleCount;
+            const speed = 0.02 + Math.random() * 0.02;
+            particle.userData.velocity = new THREE.Vector3(
+                Math.cos(angle) * speed,
+                0.02 + Math.random() * 0.02,
+                Math.sin(angle) * speed
+            );
             
-            particle.setAttribute('animation__fade', {
-                property: 'material.opacity',
-                from: 1,
-                to: 0,
-                dur: 400,
-                easing: 'easeOutQuad'
-            });
-            
-            this.coinsContainer.appendChild(particle);
-            
-            // Remove particle after animation
-            setTimeout(() => {
-                if (particle.parentNode) {
-                    particle.parentNode.removeChild(particle);
-                }
-            }, 400);
+            this.scene.add(particle);
+            particles.push(particle);
         }
+        
+        // Animate particles
+        const startTime = Date.now();
+        const animateParticles = () => {
+            const elapsed = Date.now() - startTime;
+            const progress = elapsed / 500;
+            
+            particles.forEach(particle => {
+                particle.position.add(particle.userData.velocity);
+                particle.material.opacity = 1 - progress;
+                particle.scale.multiplyScalar(0.95);
+            });
+            
+            if (progress < 1) {
+                requestAnimationFrame(animateParticles);
+            } else {
+                particles.forEach(p => this.scene.remove(p));
+            }
+        };
+        
+        animateParticles();
     }
 
     updateScore() {
         this.scoreValue.textContent = this.score;
+        this.scoreValue.classList.add('pulse');
+        setTimeout(() => this.scoreValue.classList.remove('pulse'), 300);
+    }
+
+    updateCoinsRemaining() {
+        const remaining = this.coins.filter(c => !c.userData.collected).length;
+        this.coinsLeft.textContent = remaining;
+    }
+
+    onWindowResize() {
+        if (this.camera && this.renderer) {
+            this.camera.aspect = window.innerWidth / window.innerHeight;
+            this.camera.updateProjectionMatrix();
+            this.renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+    }
+
+    animate() {
+        if (this.gameState !== 'playing') return;
         
-        // Animate score update
-        this.scoreValue.style.transform = 'scale(1.3)';
-        this.scoreValue.style.color = '#ffd700';
-        setTimeout(() => {
-            this.scoreValue.style.transform = 'scale(1)';
-            this.scoreValue.style.color = '#333';
-        }, 200);
+        requestAnimationFrame(() => this.animate());
+        
+        const delta = this.clock.getDelta();
+        const time = this.clock.getElapsedTime();
+        
+        // Update device orientation
+        if (this.orientationEnabled) {
+            const alpha = THREE.MathUtils.degToRad(this.deviceOrientation.alpha || 0);
+            const beta = THREE.MathUtils.degToRad(this.deviceOrientation.beta || 0);
+            const gamma = THREE.MathUtils.degToRad(this.deviceOrientation.gamma || 0);
+            
+            // Apply device orientation to camera
+            this.camera.rotation.order = 'YXZ';
+            this.camera.rotation.x = beta - Math.PI / 2;
+            this.camera.rotation.y = -alpha;
+            this.camera.rotation.z = -gamma;
+        }
+        
+        // Animate coins
+        this.coins.forEach(coin => {
+            if (!coin.userData.collected) {
+                // Floating animation
+                const floatY = Math.sin(time * coin.userData.floatSpeed + coin.userData.floatOffset) * coin.userData.floatAmplitude;
+                coin.position.y = coin.userData.originalY + floatY;
+                
+                // Rotation animation
+                coin.rotation.y += delta * coin.userData.rotationSpeed * 2;
+            }
+        });
+        
+        this.renderer.render(this.scene, this.camera);
     }
 
     endGame() {
         this.gameState = 'gameover';
         this.finalScore.textContent = this.score;
         
-        // Stop camera
         this.stopCamera();
         
-        // Show game over screen
         this.gameScreen.classList.remove('active');
         this.gameOverScreen.classList.add('active');
     }
@@ -379,21 +562,19 @@ class ARCoinGame {
     }
 
     restartGame() {
-        // Clean up coins
+        // Clean up
         this.coins.forEach(coin => {
-            if (coin.parentNode) {
-                coin.parentNode.removeChild(coin);
-            }
+            this.scene.remove(coin);
         });
         this.coins = [];
         
-        // Reset game over screen
+        // Reset UI
         this.gameOverScreen.classList.remove('active');
+        this.instructionsOverlay.classList.remove('fade-out');
         
-        // Show instructions overlay again
-        if (this.instructionsOverlay) {
-            this.instructionsOverlay.style.display = 'block';
-            this.instructionsOverlay.style.opacity = '1';
+        // Reset camera rotation
+        if (this.camera) {
+            this.camera.rotation.set(0, 0, 0);
         }
         
         // Start new game
@@ -402,35 +583,23 @@ class ARCoinGame {
         this.gameScreen.classList.add('active');
         this.loadingIndicator.classList.remove('hidden');
         
-        // Reinitialize camera and game
         this.initCamera().then(() => {
-            this.initAR();
+            this.spawnCoins();
+            this.gameState = 'playing';
+            this.loadingIndicator.classList.add('hidden');
+            this.animate();
+            
+            setTimeout(() => {
+                this.instructionsOverlay.classList.add('fade-out');
+            }, 4000);
         }).catch((error) => {
-            console.error('Failed to restart camera:', error);
+            console.error('Failed to restart:', error);
             this.loadingIndicator.classList.add('hidden');
         });
     }
-
-    backToMenu() {
-        this.gameState = 'menu';
-        this.gameScreen.classList.remove('active');
-        this.gameOverScreen.classList.remove('active');
-        this.startScreen.classList.add('active');
-        
-        // Stop camera
-        this.stopCamera();
-        
-        // Clean up coins
-        this.coins.forEach(coin => {
-            if (coin.parentNode) {
-                coin.parentNode.removeChild(coin);
-            }
-        });
-        this.coins = [];
-    }
 }
 
-// Initialize game when DOM is loaded
+// Initialize when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
     window.game = new ARCoinGame();
 });
