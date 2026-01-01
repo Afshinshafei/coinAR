@@ -8,23 +8,25 @@
     <title>AR Coin Collector</title>
     <link rel="stylesheet" href="styles.css">
     <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
-    <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
 </head>
 <body>
     <!-- Start Screen -->
     <div id="startScreen" class="screen active">
         <div class="container">
             <h1 class="title">AR Coin Collector</h1>
-            <p class="instructions">Walk around and collect coins in augmented reality!</p>
+            <p class="instructions">Walk around and collect floating coins in augmented reality!</p>
             <button id="startButton" class="btn-primary">Start AR Game</button>
             <div id="arNotSupported" class="warning hidden">
-                Your device doesn't support AR. Please use a compatible device with AR capabilities.
+                Your device doesn't support camera access. Please allow camera permissions.
             </div>
         </div>
     </div>
 
     <!-- Game Screen -->
     <div id="gameScreen" class="screen">
+        <!-- Video Background for AR -->
+        <video id="cameraFeed" autoplay playsinline muted></video>
+        
         <!-- Score Display -->
         <div id="scoreDisplay" class="score-overlay">
             <div class="score-label">Score</div>
@@ -36,19 +38,43 @@
             <p>Tap on coins to collect them!</p>
         </div>
 
-        <!-- A-Frame AR Scene -->
+        <!-- A-Frame Scene (transparent, overlaid on camera) -->
         <a-scene 
             id="arScene"
             embedded 
-            arjs="sourceType: webcam; debugUIEnabled: false; detectionMode: mono_and_matrix; matrixCodeType: 3x3;"
             vr-mode-ui="enabled: false"
-            renderer="logarithmicDepthBuffer: true; precision: medium;"
-            loading-screen="enabled: false">
+            renderer="alpha: true; antialias: true; colorManagement: true;"
+            loading-screen="enabled: false"
+            background="color: transparent">
             
-            <!-- Camera -->
-            <a-camera gps-camera rotation-reader look-controls-enabled="false"></a-camera>
+            <!-- Assets -->
+            <a-assets timeout="10000">
+                <a-asset-item id="coinModel" src="Copilot3D-d9aba749-7d22-4170-8f7d-3991895511f0.glb"></a-asset-item>
+            </a-assets>
             
-            <!-- Coins will be added here dynamically -->
+            <!-- Lighting for 3D models -->
+            <a-light type="ambient" color="#ffffff" intensity="0.8"></a-light>
+            <a-light type="directional" color="#ffffff" intensity="1.2" position="1 2 1"></a-light>
+            <a-light type="directional" color="#ffd700" intensity="0.5" position="-1 1 -1"></a-light>
+            
+            <!-- Camera with cursor for raycasting -->
+            <a-entity id="cameraRig" position="0 1.6 0">
+                <a-camera 
+                    id="mainCamera"
+                    look-controls="enabled: true; touchEnabled: true; magicWindowTrackingEnabled: true"
+                    wasd-controls="enabled: false">
+                    <a-cursor 
+                        id="cursor"
+                        fuse="false"
+                        raycaster="objects: .coin; far: 20"
+                        material="color: white; shader: flat"
+                        geometry="primitive: ring; radiusInner: 0.02; radiusOuter: 0.03">
+                    </a-cursor>
+                </a-camera>
+            </a-entity>
+            
+            <!-- Coins Container -->
+            <a-entity id="coinsContainer"></a-entity>
         </a-scene>
     </div>
 
@@ -67,10 +93,9 @@
     <!-- Loading Indicator -->
     <div id="loadingIndicator" class="loading-indicator hidden">
         <div class="spinner"></div>
-        <p>Initializing AR...</p>
+        <p>Initializing Camera...</p>
     </div>
 
     <script src="game.js"></script>
 </body>
 </html>
-
