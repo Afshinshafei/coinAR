@@ -22,15 +22,18 @@ Play the game at: `https://[your-username].github.io/coinAR/`
 
 | Platform | Browser | Version |
 |----------|---------|---------|
-| Android | Chrome | 79+ |
+| Android | Chrome | 56+ |
+| Android | Firefox | 68+ |
 | Android | Edge | 79+ |
-| iOS | Safari | 15.4+ |
-| iOS | Chrome | 15.4+ (uses Safari WebKit) |
+| iOS | Safari | 11+ |
+| iOS | Chrome | All (uses Safari WebKit) |
+| iOS | Edge | All (uses Safari WebKit) |
 
 ### Requirements
-- Device with ARCore (Android) or ARKit (iOS) support
+- Device with camera
 - Camera permissions enabled
 - HTTPS connection (automatically provided by GitHub Pages)
+- Gyroscope/accelerometer (standard on all modern phones)
 
 ## How to Play
 
@@ -123,19 +126,27 @@ coinAR/
 
 ### Technologies Used
 
-- **WebXR Device API**: For AR capabilities
-- **model-viewer**: Google's 3D model viewer with AR support
+- **AR.js**: Location-based AR framework for web
+- **A-Frame**: WebVR/WebXR framework for 3D experiences
 - **HTML5/CSS3/JavaScript**: Core web technologies
 - **GLB 3D Model**: Optimized 3D coin model
 
 ### How It Works
 
-1. The game uses `model-viewer` library which provides WebXR integration
-2. When AR starts, coins are positioned at calculated coordinates around the user
-3. Each coin is rendered as a 3D model with rotation animation
-4. Touch detection determines when a coin is tapped
-5. Collected coins are removed and the score updates
+1. The game uses A-Frame with AR.js for camera-based AR
+2. When AR starts, coins are positioned in 3D space around the user (2-3.5 meters away)
+3. Each coin is rendered as a 3D GLB model with rotation animation
+4. Users tap/click on coins in the AR view to collect them
+5. Collected coins animate and disappear, updating the score
 6. Game ends when all coins are collected
+
+### Why AR.js Instead of WebXR?
+
+WebXR has limited support on iOS (requires iOS 15.4+ and has restrictions). AR.js provides:
+- Better iOS compatibility (works on iOS 11+)
+- Works with standard camera access
+- No special AR frameworks required on device
+- More reliable across different browsers
 
 ### Performance Considerations
 
@@ -184,9 +195,11 @@ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
 ### AR Not Working
 
 - **Check Browser**: Ensure you're using a supported browser
-- **Camera Permissions**: Make sure camera access is granted
-- **HTTPS Required**: AR only works over secure connections
-- **Device Support**: Verify your device supports ARCore/ARKit
+- **Camera Permissions**: Make sure camera access is granted (check browser settings)
+- **HTTPS Required**: AR only works over secure connections (GitHub Pages provides this)
+- **Allow Motion Sensors**: On iOS, go to Settings > Safari > Motion & Orientation Access and enable it
+- **Try Refreshing**: Sometimes the camera needs a second attempt to initialize
+- **Check Console**: Open browser dev tools to see any errors
 
 ### Coins Not Appearing
 

@@ -112,11 +112,19 @@ body {
     background: #000;
 }
 
-#arContainer {
+#arScene {
     width: 100%;
     height: 100%;
-    position: relative;
-    overflow: hidden;
+}
+
+/* A-Frame canvas styling */
+.a-canvas {
+    z-index: 0;
+}
+
+/* Coin cursor */
+.coin {
+    cursor: pointer;
 }
 
 /* Score Display */
@@ -128,9 +136,10 @@ body {
     padding: 15px 25px;
     border-radius: 20px;
     box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
-    z-index: 1000;
+    z-index: 9999;
     text-align: center;
     min-width: 100px;
+    pointer-events: none;
 }
 
 .score-label {
@@ -159,62 +168,19 @@ body {
     padding: 15px 30px;
     border-radius: 30px;
     font-size: 1.1rem;
-    z-index: 1000;
+    z-index: 9999;
     transition: opacity 0.5s ease;
-}
-
-/* AR Coins */
-.ar-coin {
-    pointer-events: auto;
-    cursor: pointer;
-    z-index: 10;
-    filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.3));
-    animation: float 2s ease-in-out infinite;
-}
-
-@keyframes float {
-    0%, 100% {
-        transform: translate(-50%, -50%) translateY(0);
-    }
-    50% {
-        transform: translate(-50%, -50%) translateY(-10px);
-    }
-}
-
-/* Reticle */
-.reticle {
-    position: absolute;
-    width: 40px;
-    height: 40px;
-    border: 3px solid rgba(255, 255, 255, 0.8);
-    border-radius: 50%;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    z-index: 100;
     pointer-events: none;
 }
 
-.reticle::before {
-    content: '';
-    position: absolute;
-    width: 20px;
-    height: 2px;
-    background: rgba(255, 255, 255, 0.8);
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-}
+/* AR Coins - removed old model-viewer styles */
 
-.reticle::after {
-    content: '';
+/* Score and UI overlays need higher z-index */
+.score-overlay,
+.instructions-overlay,
+.loading-indicator {
+    z-index: 9999;
     position: absolute;
-    width: 2px;
-    height: 20px;
-    background: rgba(255, 255, 255, 0.8);
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
 }
 
 /* Game Over Screen */
@@ -255,8 +221,9 @@ body {
     left: 50%;
     transform: translate(-50%, -50%);
     text-align: center;
-    z-index: 2000;
+    z-index: 9999;
     color: white;
+    pointer-events: none;
 }
 
 .spinner {
