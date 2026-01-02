@@ -2,82 +2,64 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="mobile-web-app-capable" content="yes">
-    <title>AR Coin Collector</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Coin Hunter AR</title>
+    <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
+    <script src="https://unpkg.com/aframe-extras@7.0.0/dist/aframe-extras.min.js"></script>
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
     <!-- Start Screen -->
-    <div id="startScreen" class="screen active">
-        <div class="container">
-            <div class="coin-icon">&#x1FA99;</div>
-            <h1 class="title">AR Coin Collector</h1>
-            <p class="instructions">Walk around and collect floating coins in augmented reality!</p>
-            <button id="startButton" class="btn-primary">
-                <span class="btn-icon">&#9658;</span>
-                Start AR Game
-            </button>
-            <div id="arNotSupported" class="warning hidden">
-                Camera access is required. Please allow camera permissions and reload.
-            </div>
+    <div id="start-screen">
+        <div class="start-content">
+            <h1>COIN HUNTER</h1>
+            <p>Find and collect floating coins in AR!</p>
+            <button id="start-btn">START AR</button>
+            <p class="instructions">Walk through coins to collect them</p>
         </div>
     </div>
 
-    <!-- Game Screen -->
-    <div id="gameScreen" class="screen">
-        <!-- Video Background for AR -->
-        <video id="cameraFeed" autoplay playsinline muted></video>
-        
-        <!-- Canvas for 3D rendering -->
-        <canvas id="gameCanvas"></canvas>
-        
-        <!-- Score Display -->
-        <div id="scoreDisplay" class="score-overlay">
-            <div class="score-label">Score</div>
-            <div id="scoreValue" class="score-value">0</div>
+    <!-- Game UI Overlay -->
+    <div id="game-ui" class="hidden">
+        <div id="score-container">
+            <span id="coin-icon">&#x1FA99;</span>
+            <span id="score">0</span>
         </div>
-
-        <!-- Coins remaining -->
-        <div id="coinsRemaining" class="coins-remaining">
-            <span id="coinsLeft">8</span> coins left
-        </div>
-
-        <!-- Instructions Overlay -->
-        <div id="instructionsOverlay" class="instructions-overlay">
-            <p>Look around and tap coins to collect them!</p>
-        </div>
-
-        <!-- Crosshair -->
-        <div id="crosshair" class="crosshair"></div>
+        <div id="message"></div>
     </div>
 
-    <!-- Game Over Screen -->
-    <div id="gameOverScreen" class="screen">
-        <div class="container">
-            <div class="trophy-icon">&#127942;</div>
-            <h1 class="title">Game Complete!</h1>
-            <div class="final-score-container">
-                <p class="final-score-label">Final Score</p>
-                <p id="finalScore" class="final-score-value">0</p>
-            </div>
-            <button id="restartButton" class="btn-primary">
-                <span class="btn-icon">&#8635;</span>
-                Play Again
-            </button>
-        </div>
-    </div>
+    <!-- A-Frame Scene -->
+    <a-scene
+        id="ar-scene"
+        webxr="requiredFeatures: hit-test, local-floor; optionalFeatures: dom-overlay; overlayElement: #game-ui;"
+        renderer="colorManagement: true; physicallyCorrectLights: true;"
+        ar-hit-test="enabled: true; type: footprint;"
+        class="hidden"
+    >
+        <!-- Assets -->
+        <a-assets>
+            <a-asset-item id="coin-model" src="coind3d.glb"></a-asset-item>
+        </a-assets>
 
-    <!-- Loading Indicator -->
-    <div id="loadingIndicator" class="loading-indicator hidden">
-        <div class="spinner"></div>
-        <p>Initializing Camera...</p>
-    </div>
+        <!-- Lighting for AR -->
+        <a-entity light="type: ambient; color: #FFF; intensity: 0.7;"></a-entity>
+        <a-entity light="type: directional; color: #FFF; intensity: 0.8;" position="1 4 2"></a-entity>
 
-    <!-- Three.js and GLTFLoader -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+        <!-- Container for spawned coins -->
+        <a-entity id="coins-container"></a-entity>
+
+        <!-- Camera (AR mode uses device camera) -->
+        <a-entity id="camera-rig">
+            <a-camera id="camera" position="0 1.6 0"></a-camera>
+        </a-entity>
+
+        <!-- Reticle for surface detection visualization -->
+        <a-entity id="reticle" visible="false">
+            <a-ring color="#FFD700" radius-inner="0.04" radius-outer="0.06" rotation="-90 0 0" material="opacity: 0.8; transparent: true;"></a-ring>
+        </a-entity>
+    </a-scene>
+
     <script src="game.js"></script>
 </body>
 </html>
+
