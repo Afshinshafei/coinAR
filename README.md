@@ -8,9 +8,11 @@ Use **Chrome on an Android phone** with **ARCore**. Open the site over **HTTPS**
 
 ## Deploy on GitHub Pages
 
-1. Push this repo to GitHub with `index.html`, `main.js`, `styles.css`, and `coind3d.glb` at the **same path level** (repo root or `/docs` if you use the docs folder source).
-2. In the repository **Settings → Pages**, choose a branch (usually `main`) and folder `/ (root)` or `/docs`.
-3. After the first deploy, the app URL will be either:
+This repo includes a **GitHub Actions** workflow (`.github/workflows/deploy-pages.yml`) that publishes the site on every push to `main`.
+
+1. Push the `main` branch to GitHub.
+2. Open **Settings → Pages** for the repository. Under **Build and deployment**, set **Source** to **GitHub Actions** (not "Deploy from a branch", unless you prefer that method instead).
+3. After the workflow runs, the app URL will be either:
    - **Project site:** `https://<username>.github.io/<repository>/`
    - **User site:** `https://<username>.github.io/` (only if this repo is named `<username>.github.io`)
 
