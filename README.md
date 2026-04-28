@@ -4,7 +4,17 @@ Simple WebXR coin hunt for phones. Coins spawn on detected surfaces in front of 
 
 ## Try it
 
-Use **Chrome on an Android phone** with **ARCore**. Open the site over **HTTPS** (GitHub Pages provides this). Tap **Start AR**, allow permissions, then move toward floating coins.
+Use **Chrome on an Android phone** with **ARCore**. Open the site over **HTTPS** (GitHub Pages uses `https://` automatically). Tap **Start AR**, allow permissions, then move toward floating coins.
+
+### If the page says WebXR is missing
+
+WebXR is only available in a **[secure context](https://developer.mozilla.org/en-US/docs/Web/Security/Secure_Contexts)**. Common causes:
+
+1. **Not HTTPS** – Opening `http://192.168.x.x:8080` or similar from your PC on the phone is **not** secure; `navigator.xr` stays undefined. Use your **GitHub Pages** URL (`https://<user>.github.io/<repo>/`) or another **https://** host.
+2. **file://** – Opening the HTML file from disk will not run modules or WebXR correctly. Deploy to GitHub Pages or use a local **HTTPS** static server.
+3. **In-app browsers** – Instagram, Facebook, and similar embedded browsers often hide WebXR. Use **Open in Chrome** (or the system browser).
+
+Official background: [Immersive Web WebXR](https://immersiveweb.dev/) and [three.js WebXR](https://threejs.org/docs/#manual/en/introduction/WebXR-and-three.js).
 
 ## Deploy on GitHub Pages
 
@@ -13,7 +23,7 @@ Static files live at the repo root (`index.html`, `main.js`, `styles.css`, `coin
 1. On GitHub: **Settings → Pages** for this repository.
 2. Under **Build and deployment**, set **Source** to **Deploy from a branch**.
 3. Choose branch **main** and folder **/ (root)**, then save.
-4. After a minute, the site is available at **https://afshinshafei.github.io/coinAR/** (project Pages URL for this repo).
+4. After a minute, the site is available at `https://<your-username>.github.io/<repository>/` for a project site.
 
 For a **user/org site** instead (`https://<username>.github.io/` only), the repo must be named `<username>.github.io`.
 

@@ -15,7 +15,23 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 
+body > canvas {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+body.xr-active > canvas {
+  pointer-events: auto;
+}
+
 #pre-ar {
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -63,6 +79,19 @@ body {
   min-height: 1.25rem;
   font-size: 0.85rem;
   color: #fbbf24;
+}
+
+.status-extra {
+  margin-top: 0.5rem;
+  max-width: 22rem;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  color: #9aa7b4;
+}
+
+.status-extra a {
+  color: #6ee7b7;
+  word-break: break-all;
 }
 
 .overlay-root {

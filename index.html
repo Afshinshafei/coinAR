@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
+  <meta http-equiv="Permissions-Policy" content="xr-spatial-tracking=(self)" />
   <title>Coin Hunt AR</title>
   <link rel="stylesheet" href="./styles.css" />
   <script type="importmap">
@@ -17,9 +18,14 @@
 <body>
   <div id="pre-ar">
     <h1>Coin Hunt AR</h1>
-    <p class="hint">Use Chrome on a phone with ARCore. Allow camera when prompted.</p>
+    <p class="hint">
+      Open this site with <strong>https://</strong> (GitHub Pages does this automatically). Use
+      <strong>Chrome on Android</strong> with ARCore. If you used a LAN IP or <code>http://</code>, WebXR stays hidden.
+      Open in the system browser, not inside Instagram or Facebook in-app browsers.
+    </p>
     <button type="button" id="btn-start" disabled>Start AR</button>
     <p id="status" class="status" aria-live="polite"></p>
+    <p id="status-extra" class="status-extra" aria-live="polite"></p>
   </div>
   <div id="dom-overlay-root" class="overlay-root" hidden>
     <div class="counter-bar">

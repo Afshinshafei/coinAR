@@ -12,6 +12,7 @@ const BOB_SPEED = 2.2;
 
 const btnStart = document.getElementById('btn-start');
 const statusEl = document.getElementById('status');
+const statusExtraEl = document.getElementById('status-extra');
 const preAr = document.getElementById('pre-ar');
 const overlayRoot = document.getElementById('dom-overlay-root');
 const coinCountEl = document.getElementById('coin-count');
@@ -20,6 +21,22 @@ let collected = 0;
 
 function setStatus(text) {
   statusEl.textContent = text || '';
+}
+
+function clearStatusExtra() {
+  statusExtraEl.replaceChildren();
+}
+
+function showHttpsReloadHint() {
+  clearStatusExtra();
+  const line = document.createElement('span');
+  line.appendChild(document.createTextNode('Open the same address with '));
+  const a = document.createElement('a');
+  a.href = document.location.href.replace(/^http:/i, 'https:');
+  a.textContent = 'https://';
+  line.appendChild(a);
+  line.appendChild(document.createTextNode(' so the browser exposes WebXR.'));
+  statusExtraEl.appendChild(line);
 }
 
 function updateCounterDisplay() {
@@ -36,6 +53,19 @@ const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.xr.enabled = true;
+try {
+  renderer.xr.setReferenceSpaceType('local-floor');
+} catch {
+  try {
+    renderer.xr.setReferenceSpaceType('local');
+  } catch {
+    try {
+      renderer.xr.setReferenceSpaceType('viewer');
+    } catch {
+      /* ignore */
+    }
+  }
+}
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1;
@@ -238,6 +268,7 @@ renderer.setAnimationLoop((timeMs, frame) => {
 });
 
 renderer.xr.addEventListener('sessionstart', () => {
+  document.body.classList.add('xr-active');
   lastFrameTimeMs = 0;
   spawnAccumMs = SPAWN_INTERVAL_MS;
   if (!useDomOverlay) {
@@ -248,6 +279,7 @@ renderer.xr.addEventListener('sessionstart', () => {
 });
 
 renderer.xr.addEventListener('sessionend', () => {
+  document.body.classList.remove('xr-active');
   xrSession = null;
   hitTestSource = null;
   hitTestSourceRequested = false;
@@ -263,6 +295,15 @@ renderer.xr.addEventListener('sessionend', () => {
   overlayRoot.hidden = true;
   btnStart.disabled = false;
   setStatus('');
+  clearStatusExtra();
+  if (navigator.xr?.offerSession) {
+    const offerInit = {
+      requiredFeatures: [],
+      optionalFeatures: ['local-floor', 'hit-test', 'dom-overlay'],
+      domOverlay: { root: overlayRoot },
+    };
+    navigator.xr.offerSession('immersive-ar', offerInit).catch(() => {});
+  }
 });
 
 async function requestReferenceSpace(session) {
@@ -279,40 +320,76 @@ async function requestReferenceSpace(session) {
 
 async function startSession() {
   if (!navigator.xr) {
-    setStatus('WebXR not supported in this browser.');
+    setStatus('WebXR is not exposed in this context.');
     return;
   }
 
-  const ok = await navigator.xr.isSessionSupported('immersive-ar');
-  if (!ok) {
-    setStatus('immersive-ar not supported. Try Chrome on an ARCore phone.');
+  let supported = false;
+  try {
+    supported = await navigator.xr.isSessionSupported('immersive-ar');
+  } catch (e) {
+    setStatus('Could not query AR support.');
+    clearStatusExtra();
+    statusExtraEl.textContent = e?.message || String(e);
+    return;
+  }
+
+  if (!supported) {
+    setStatus('immersive-ar is not supported on this device or browser.');
+    clearStatusExtra();
+    statusExtraEl.textContent =
+      'Use Chrome on Android with Google Play Services for AR. Desktop browsers usually cannot run phone AR.';
     return;
   }
 
   useDomOverlay = false;
-  let session;
+  let session = null;
+  let lastErr = null;
 
-  const withOverlay = {
-    requiredFeatures: ['hit-test'],
-    optionalFeatures: ['local-floor', 'dom-overlay'],
-    domOverlay: { root: overlayRoot },
-  };
+  const attempts = [
+    {
+      requiredFeatures: [],
+      optionalFeatures: ['local-floor', 'hit-test', 'dom-overlay'],
+      domOverlay: { root: overlayRoot },
+    },
+    {
+      requiredFeatures: [],
+      optionalFeatures: ['local-floor', 'hit-test'],
+    },
+    {
+      requiredFeatures: [],
+      optionalFeatures: ['hit-test', 'dom-overlay'],
+      domOverlay: { root: overlayRoot },
+    },
+    {
+      requiredFeatures: [],
+      optionalFeatures: ['local-floor', 'dom-overlay'],
+      domOverlay: { root: overlayRoot },
+    },
+    {
+      requiredFeatures: [],
+      optionalFeatures: ['local-floor'],
+    },
+  ];
 
-  try {
-    session = await navigator.xr.requestSession('immersive-ar', withOverlay);
-    if (session.domOverlayState && session.domOverlayState.type) {
-      useDomOverlay = true;
-    }
-  } catch {
+  for (const init of attempts) {
     try {
-      session = await navigator.xr.requestSession('immersive-ar', {
-        requiredFeatures: ['hit-test'],
-        optionalFeatures: ['local-floor'],
-      });
-    } catch (e2) {
-      setStatus(`Could not start AR: ${e2.message || 'unknown error'}`);
-      return;
+      session = await navigator.xr.requestSession('immersive-ar', init);
+      break;
+    } catch (e) {
+      lastErr = e;
     }
+  }
+
+  if (!session) {
+    setStatus('Could not start an AR session.');
+    clearStatusExtra();
+    statusExtraEl.textContent = lastErr?.message || String(lastErr);
+    return;
+  }
+
+  if (session.domOverlayState && session.domOverlayState.type) {
+    useDomOverlay = true;
   }
 
   referenceSpace = await requestReferenceSpace(session);
@@ -336,22 +413,42 @@ async function startSession() {
 }
 
 async function init() {
-  if (!navigator.xr) {
-    setStatus('WebXR not available.');
+  clearStatusExtra();
+  btnStart.disabled = true;
+
+  if (!window.isSecureContext) {
+    setStatus('This page is not a secure context, so WebXR is disabled.');
+    showHttpsReloadHint();
+    return;
+  }
+
+  if (!('xr' in navigator) || !navigator.xr) {
+    setStatus('navigator.xr is missing.');
+    clearStatusExtra();
+    const p = document.createElement('p');
+    p.appendChild(
+      document.createTextNode(
+        'Use Chrome on Android over https://, or open the published GitHub Pages link. If you opened a local file or http:// on your phone, WebXR will not appear. In-app browsers (Instagram, Facebook) often strip WebXR: use Open in Chrome.',
+      ),
+    );
+    statusExtraEl.appendChild(p);
     return;
   }
 
   let arOk = false;
   try {
     arOk = await navigator.xr.isSessionSupported('immersive-ar');
-  } catch {
-    arOk = false;
+  } catch (e) {
+    setStatus('Could not query immersive-ar support.');
+    statusExtraEl.textContent = e?.message || String(e);
+    return;
   }
-  if (arOk) {
-    btnStart.disabled = false;
-    setStatus('');
-  } else {
-    setStatus('AR session not supported here.');
+
+  if (!arOk) {
+    setStatus('immersive-ar is not supported in this browser.');
+    clearStatusExtra();
+    statusExtraEl.textContent =
+      'Try Chrome on a recent Android phone with ARCore. iOS WebXR AR support is still limited compared to Android.';
   }
 
   try {
@@ -366,9 +463,17 @@ async function init() {
     return;
   }
 
+  btnStart.disabled = !arOk;
+  if (arOk) {
+    setStatus('');
+    clearStatusExtra();
+  }
+
   btnStart.addEventListener('click', () => {
     startSession().catch((e) => {
-      setStatus(e.message || String(e));
+      setStatus('Session error.');
+      clearStatusExtra();
+      statusExtraEl.textContent = e.message || String(e);
       btnStart.disabled = false;
     });
   });
