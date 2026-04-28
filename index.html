@@ -1,65 +1,32 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Coin Hunter AR</title>
-    <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
-    <script src="https://unpkg.com/aframe-extras@7.0.0/dist/aframe-extras.min.js"></script>
-    <link rel="stylesheet" href="styles.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
+  <title>Coin Hunt AR</title>
+  <link rel="stylesheet" href="./styles.css" />
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
 </head>
 <body>
-    <!-- Start Screen -->
-    <div id="start-screen">
-        <div class="start-content">
-            <h1>COIN HUNTER</h1>
-            <p>Find and collect floating coins in AR!</p>
-            <button id="start-btn">START AR</button>
-            <p class="instructions">Walk through coins to collect them</p>
-        </div>
+  <div id="pre-ar">
+    <h1>Coin Hunt AR</h1>
+    <p class="hint">Use Chrome on a phone with ARCore. Allow camera when prompted.</p>
+    <button type="button" id="btn-start" disabled>Start AR</button>
+    <p id="status" class="status" aria-live="polite"></p>
+  </div>
+  <div id="dom-overlay-root" class="overlay-root" hidden>
+    <div class="counter-bar">
+      <span class="counter-label">Coins</span>
+      <span id="coin-count" class="counter-value">0</span>
     </div>
-
-    <!-- Game UI Overlay -->
-    <div id="game-ui" class="hidden">
-        <div id="score-container">
-            <span id="coin-icon">&#x1FA99;</span>
-            <span id="score">0</span>
-        </div>
-        <div id="message"></div>
-    </div>
-
-    <!-- A-Frame Scene -->
-    <a-scene
-        id="ar-scene"
-        webxr="requiredFeatures: hit-test, local-floor; optionalFeatures: dom-overlay; overlayElement: #game-ui;"
-        renderer="colorManagement: true; physicallyCorrectLights: true;"
-        ar-hit-test="enabled: true; type: footprint;"
-        class="hidden"
-    >
-        <!-- Assets -->
-        <a-assets>
-            <a-asset-item id="coin-model" src="coind3d.glb"></a-asset-item>
-        </a-assets>
-
-        <!-- Lighting for AR -->
-        <a-entity light="type: ambient; color: #FFF; intensity: 0.7;"></a-entity>
-        <a-entity light="type: directional; color: #FFF; intensity: 0.8;" position="1 4 2"></a-entity>
-
-        <!-- Container for spawned coins -->
-        <a-entity id="coins-container"></a-entity>
-
-        <!-- Camera (AR mode uses device camera) -->
-        <a-entity id="camera-rig">
-            <a-camera id="camera" position="0 1.6 0"></a-camera>
-        </a-entity>
-
-        <!-- Reticle for surface detection visualization -->
-        <a-entity id="reticle" visible="false">
-            <a-ring color="#FFD700" radius-inner="0.04" radius-outer="0.06" rotation="-90 0 0" material="opacity: 0.8; transparent: true;"></a-ring>
-        </a-entity>
-    </a-scene>
-
-    <script src="game.js"></script>
+  </div>
+  <script type="module" src="./main.js"></script>
 </body>
 </html>
-
