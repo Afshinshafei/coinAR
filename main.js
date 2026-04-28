@@ -4,20 +4,42 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 const COIN_MODEL_URL = new URL('./coind3d.glb', import.meta.url).href;
 const COIN_UNIFORM_SCALE = 0.12;
 const SURFACE_OFFSET_M = 0.16;
-const MAX_ACTIVE_COINS = 16;
-const SPAWN_INTERVAL_MS = 2000;
+const MAX_ACTIVE_COINS = 14;
+const SPAWN_INTERVAL_MS = 2200;
 const COLLECT_DISTANCE_M = 0.34;
+const COLLECT_RAY_TO_POINT_M = 0.36;
+const COLLECT_MAX_RANGE_M = 5.5;
 const BOB_AMPLITUDE_M = 0.025;
 const BOB_SPEED = 2.2;
 
 const btnStart = document.getElementById('btn-start');
+const btnStop = document.getElementById('btn-stop');
 const statusEl = document.getElementById('status');
 const statusExtraEl = document.getElementById('status-extra');
+const hintMain = document.getElementById('hint-main');
 const preAr = document.getElementById('pre-ar');
 const overlayRoot = document.getElementById('dom-overlay-root');
 const coinCountEl = document.getElementById('coin-count');
+const videoEl = document.getElementById('cam-feed');
 
 let collected = 0;
+/** @type {'idle' | 'webxr' | 'iphone'} */
+let activeMode = 'idle';
+/** @type {'webxr' | 'camera'} */
+let startKind = 'camera';
+
+let mediaStream = null;
+let onDeviceOrientation = null;
+
+const raycaster = new THREE.Raycaster();
+const pCenter = new THREE.Vector2(0, 0);
+
+function isIOS() {
+  return (
+    /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+  );
+}
 
 function setStatus(text) {
   statusEl.textContent = text || '';
@@ -35,7 +57,7 @@ function showHttpsReloadHint() {
   a.href = document.location.href.replace(/^http:/i, 'https:');
   a.textContent = 'https://';
   line.appendChild(a);
-  line.appendChild(document.createTextNode(' so the browser exposes WebXR.'));
+  line.appendChild(document.createTextNode(' so camera and motion APIs work.'));
   statusExtraEl.appendChild(line);
 }
 
@@ -46,8 +68,8 @@ function updateCounterDisplay() {
 const scene = new THREE.Scene();
 scene.background = null;
 
-const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 50);
-camera.position.set(0, 1.6, 0);
+const camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.05, 80);
+camera.position.set(0, 1.55, 0);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -71,9 +93,9 @@ renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1;
 document.body.appendChild(renderer.domElement);
 
-const hemi = new THREE.HemisphereLight(0xffffff, 0x444455, 0.9);
+const hemi = new THREE.HemisphereLight(0xffffff, 0x444455, 1);
 scene.add(hemi);
-const dir = new THREE.DirectionalLight(0xffffff, 0.5);
+const dir = new THREE.DirectionalLight(0xffffff, 0.55);
 dir.position.set(1, 2, 1);
 scene.add(dir);
 
@@ -88,6 +110,9 @@ const tmpQuat = new THREE.Quaternion();
 const tmpScale = new THREE.Vector3();
 const tmpPos = new THREE.Vector3();
 const viewerWorldPos = new THREE.Vector3();
+const orientEuler = new THREE.Euler(0, 0, 0, 'YXZ');
+const screenOrientQuat = new THREE.Quaternion();
+const zAxis = new THREE.Vector3(0, 0, 1);
 
 let xrSession = null;
 let hitTestSource = null;
@@ -209,7 +234,51 @@ function trySpawnFromHit(frame) {
   coins.push({ root, model });
 }
 
-function updateCoins(timeSec, viewerPos) {
+function spawnCoinPhoneMode() {
+  if (!coinTemplate || coins.length >= MAX_ACTIVE_COINS) return;
+
+  const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+  const worldUp = new THREE.Vector3(0, 1, 0);
+  let right = new THREE.Vector3().crossVectors(forward, worldUp);
+  if (right.lengthSq() < 1e-8) {
+    right = new THREE.Vector3(1, 0, 0);
+  } else {
+    right.normalize();
+  }
+  const up = new THREE.Vector3().crossVectors(right, forward).normalize();
+
+  const spread = 0.62;
+  const dir = forward
+    .clone()
+    .addScaledVector(right, (Math.random() - 0.5) * 2 * spread)
+    .addScaledVector(up, (Math.random() - 0.5) * 2 * spread)
+    .normalize();
+
+  const dist = 1.75 + Math.random() * 1.35;
+  const pos = camera.position.clone().addScaledVector(dir, dist);
+
+  const root = new THREE.Group();
+  root.position.copy(pos);
+  root.quaternion.copy(camera.quaternion);
+
+  const model = coinTemplate.clone(true);
+  model.traverse((c) => {
+    if (c.isMesh) {
+      c.castShadow = false;
+      c.receiveShadow = false;
+    }
+  });
+  model.scale.setScalar(COIN_UNIFORM_SCALE);
+  root.add(model);
+
+  root.userData.bobPhase = Math.random() * Math.PI * 2;
+  root.userData.baseY = root.position.y;
+
+  scene.add(root);
+  coins.push({ root, model });
+}
+
+function updateCoinsWebXR(timeSec, viewerPos) {
   for (let i = coins.length - 1; i >= 0; i--) {
     const { root } = coins[i];
     const phase = root.userData.bobPhase;
@@ -218,6 +287,24 @@ function updateCoins(timeSec, viewerPos) {
 
     root.getWorldPosition(tmpVec);
     if (tmpVec.distanceTo(viewerPos) < COLLECT_DISTANCE_M) {
+      collectCoin(coins[i]);
+    }
+  }
+}
+
+function updateCoinsPhoneMode(timeSec) {
+  raycaster.setFromCamera(pCenter, camera);
+
+  for (let i = coins.length - 1; i >= 0; i--) {
+    const { root } = coins[i];
+    const phase = root.userData.bobPhase;
+    const bob = Math.sin(timeSec * BOB_SPEED + phase) * BOB_AMPLITUDE_M;
+    root.position.y = root.userData.baseY + bob;
+
+    root.getWorldPosition(tmpVec);
+    const range = tmpVec.distanceTo(camera.position);
+    const rayDist = raycaster.ray.distanceToPoint(tmpVec);
+    if (range < COLLECT_MAX_RANGE_M && rayDist < COLLECT_RAY_TO_POINT_M) {
       collectCoin(coins[i]);
     }
   }
@@ -232,36 +319,50 @@ function getViewerWorldPosition(frame) {
 }
 
 renderer.setAnimationLoop((timeMs, frame) => {
-  if (!frame || !referenceSpace) {
+  if (activeMode === 'iphone') {
+    const deltaMs = lastFrameTimeMs ? timeMs - lastFrameTimeMs : 16;
+    lastFrameTimeMs = timeMs;
+    const timeSec = timeMs / 1000;
+    spawnAccumMs += deltaMs;
+    if (spawnAccumMs >= SPAWN_INTERVAL_MS) {
+      spawnAccumMs = 0;
+      spawnCoinPhoneMode();
+    }
+    updateCoinsPhoneMode(timeSec);
     renderer.render(scene, camera);
     return;
   }
 
-  const deltaMs = lastFrameTimeMs ? timeMs - lastFrameTimeMs : 16;
-  lastFrameTimeMs = timeMs;
-  const timeSec = timeMs / 1000;
+  if (activeMode === 'webxr' && frame && referenceSpace) {
+    const deltaMs = lastFrameTimeMs ? timeMs - lastFrameTimeMs : 16;
+    lastFrameTimeMs = timeMs;
+    const timeSec = timeMs / 1000;
 
-  if (!hitTestSourceRequested && xrSession) {
-    hitTestSourceRequested = true;
-    xrSession.requestReferenceSpace('viewer').then((viewerSpace) => {
-      xrSession.requestHitTestSource({ space: viewerSpace }).then((source) => {
-        hitTestSource = source;
+    if (!hitTestSourceRequested && xrSession) {
+      hitTestSourceRequested = true;
+      xrSession.requestReferenceSpace('viewer').then((viewerSpace) => {
+        xrSession.requestHitTestSource({ space: viewerSpace }).then((source) => {
+          hitTestSource = source;
+        }).catch(() => {
+          setStatus('Hit test unavailable on this device.');
+        });
       }).catch(() => {
-        setStatus('Hit test unavailable on this device.');
+        setStatus('Could not create viewer space for hit test.');
       });
-    }).catch(() => {
-      setStatus('Could not create viewer space for hit test.');
-    });
-  }
-
-  const viewerPos = getViewerWorldPosition(frame);
-  if (viewerPos) {
-    spawnAccumMs += deltaMs;
-    if (spawnAccumMs >= SPAWN_INTERVAL_MS) {
-      spawnAccumMs = 0;
-      trySpawnFromHit(frame);
     }
-    updateCoins(timeSec, viewerPos);
+
+    const viewerPos = getViewerWorldPosition(frame);
+    if (viewerPos) {
+      spawnAccumMs += deltaMs;
+      if (spawnAccumMs >= SPAWN_INTERVAL_MS) {
+        spawnAccumMs = 0;
+        trySpawnFromHit(frame);
+      }
+      updateCoinsWebXR(timeSec, viewerPos);
+    }
+
+    renderer.render(scene, camera);
+    return;
   }
 
   renderer.render(scene, camera);
@@ -271,6 +372,7 @@ renderer.xr.addEventListener('sessionstart', () => {
   document.body.classList.add('xr-active');
   lastFrameTimeMs = 0;
   spawnAccumMs = SPAWN_INTERVAL_MS;
+  btnStop.hidden = true;
   if (!useDomOverlay) {
     ensureHudFallback();
     const xrCam = renderer.xr.getCamera();
@@ -279,6 +381,7 @@ renderer.xr.addEventListener('sessionstart', () => {
 });
 
 renderer.xr.addEventListener('sessionend', () => {
+  activeMode = 'idle';
   document.body.classList.remove('xr-active');
   xrSession = null;
   hitTestSource = null;
@@ -294,6 +397,7 @@ renderer.xr.addEventListener('sessionend', () => {
   preAr.hidden = false;
   overlayRoot.hidden = true;
   btnStart.disabled = false;
+  btnStop.hidden = true;
   setStatus('');
   clearStatusExtra();
   if (navigator.xr?.offerSession) {
@@ -318,7 +422,7 @@ async function requestReferenceSpace(session) {
   }
 }
 
-async function startSession() {
+async function startWebXRSession() {
   if (!navigator.xr) {
     setStatus('WebXR is not exposed in this context.');
     return;
@@ -335,10 +439,7 @@ async function startSession() {
   }
 
   if (!supported) {
-    setStatus('immersive-ar is not supported on this device or browser.');
-    clearStatusExtra();
-    statusExtraEl.textContent =
-      'Use Chrome on Android with Google Play Services for AR. Desktop browsers usually cannot run phone AR.';
+    setStatus('immersive-ar is not supported here.');
     return;
   }
 
@@ -401,7 +502,19 @@ async function startSession() {
   btnStart.disabled = true;
   updateCounterDisplay();
 
-  await renderer.xr.setSession(session);
+  activeMode = 'webxr';
+  try {
+    await renderer.xr.setSession(session);
+  } catch (e) {
+    activeMode = 'idle';
+    referenceSpace = null;
+    xrSession = null;
+    hitTestSourceRequested = false;
+    preAr.hidden = false;
+    overlayRoot.hidden = true;
+    btnStart.disabled = false;
+    throw e;
+  }
 
   session.addEventListener(
     'end',
@@ -412,43 +525,149 @@ async function startSession() {
   );
 }
 
-async function init() {
+function detachDeviceOrientation() {
+  if (onDeviceOrientation) {
+    window.removeEventListener('deviceorientation', onDeviceOrientation, true);
+    onDeviceOrientation = null;
+  }
+}
+
+function stopMedia() {
+  if (mediaStream) {
+    mediaStream.getTracks().forEach((t) => t.stop());
+    mediaStream = null;
+  }
+  videoEl.srcObject = null;
+}
+
+function stopPhoneHunt() {
+  activeMode = 'idle';
+  lastFrameTimeMs = 0;
+  spawnAccumMs = 0;
+  detachDeviceOrientation();
+  stopMedia();
+  document.body.classList.remove('ios-hunt-active');
+  while (coins.length) {
+    const c = coins.pop();
+    disposeCoin(c);
+  }
+  preAr.hidden = false;
+  overlayRoot.hidden = true;
+  btnStart.disabled = false;
+  btnStop.hidden = true;
+  useDomOverlay = false;
+  setStatus('');
   clearStatusExtra();
-  btnStart.disabled = true;
+}
 
-  if (!window.isSecureContext) {
-    setStatus('This page is not a secure context, so WebXR is disabled.');
-    showHttpsReloadHint();
+async function startPhoneHunt() {
+  if (!navigator.mediaDevices?.getUserMedia) {
+    setStatus('Camera API not available.');
     return;
   }
 
-  if (!('xr' in navigator) || !navigator.xr) {
-    setStatus('navigator.xr is missing.');
-    clearStatusExtra();
-    const p = document.createElement('p');
-    p.appendChild(
-      document.createTextNode(
-        'Use Chrome on Android over https://, or open the published GitHub Pages link. If you opened a local file or http:// on your phone, WebXR will not appear. In-app browsers (Instagram, Facebook) often strip WebXR: use Open in Chrome.',
-      ),
-    );
-    statusExtraEl.appendChild(p);
-    return;
+  if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+    try {
+      const perm = await DeviceOrientationEvent.requestPermission();
+      if (perm !== 'granted') {
+        setStatus('Motion access was denied.');
+        clearStatusExtra();
+        statusExtraEl.textContent = 'Enable motion in Safari settings or try again and tap Allow.';
+        return;
+      }
+    } catch (e) {
+      setStatus('Could not request motion permission.');
+      statusExtraEl.textContent = e?.message || String(e);
+      return;
+    }
   }
 
-  let arOk = false;
   try {
-    arOk = await navigator.xr.isSessionSupported('immersive-ar');
+    mediaStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' } },
+      audio: false,
+    });
   } catch (e) {
-    setStatus('Could not query immersive-ar support.');
+    setStatus('Camera was blocked or unavailable.');
+    clearStatusExtra();
     statusExtraEl.textContent = e?.message || String(e);
     return;
   }
 
-  if (!arOk) {
-    setStatus('immersive-ar is not supported in this browser.');
+  videoEl.srcObject = mediaStream;
+  try {
+    await videoEl.play();
+  } catch (e) {
+    stopMedia();
+    setStatus('Could not start the camera preview.');
+    statusExtraEl.textContent = e?.message || String(e);
+    return;
+  }
+
+  onDeviceOrientation = (ev) => {
+    if (ev.alpha == null || ev.beta == null || ev.gamma == null) return;
+    const alpha = THREE.MathUtils.degToRad(ev.alpha);
+    const beta = THREE.MathUtils.degToRad(ev.beta);
+    const gamma = THREE.MathUtils.degToRad(ev.gamma);
+    orientEuler.set(beta, alpha, -gamma, 'YXZ');
+    camera.quaternion.setFromEuler(orientEuler);
+    const angle = THREE.MathUtils.degToRad(window.screen?.orientation?.angle ?? 0);
+    screenOrientQuat.setFromAxisAngle(zAxis, -angle);
+    camera.quaternion.multiply(screenOrientQuat);
+  };
+  window.addEventListener('deviceorientation', onDeviceOrientation, true);
+
+  collected = 0;
+  updateCounterDisplay();
+  useDomOverlay = true;
+  activeMode = 'iphone';
+  spawnAccumMs = SPAWN_INTERVAL_MS;
+  lastFrameTimeMs = 0;
+  document.body.classList.add('ios-hunt-active');
+  preAr.hidden = true;
+  overlayRoot.hidden = false;
+  btnStop.hidden = false;
+  btnStart.disabled = true;
+  setStatus('');
+  clearStatusExtra();
+}
+
+async function onStartClick() {
+  try {
+    if (startKind === 'webxr') {
+      await startWebXRSession();
+    } else {
+      await startPhoneHunt();
+    }
+  } catch (e) {
+    setStatus('Could not start.');
     clearStatusExtra();
-    statusExtraEl.textContent =
-      'Try Chrome on a recent Android phone with ARCore. iOS WebXR AR support is still limited compared to Android.';
+    statusExtraEl.textContent = e?.message || String(e);
+    btnStart.disabled = false;
+  }
+}
+
+async function init() {
+  clearStatusExtra();
+  btnStart.disabled = true;
+  btnStop.hidden = true;
+
+  const ios = isIOS();
+
+  if (ios) {
+    hintMain.innerHTML =
+      'Designed for <strong>iPhone Safari</strong>. Tap Start hunt, allow <strong>Motion</strong> and <strong>Camera</strong>, then point the reticle at floating coins to collect them. Use the real GitHub Pages <code>https://</code> link (not an in-app browser).';
+    startKind = 'camera';
+  } else {
+    hintMain.innerHTML =
+      'On <strong>Android Chrome</strong>, WebXR places coins on surfaces. On other devices, camera hunt mode is used when WebXR is missing. Always use <strong>https://</strong>.';
+    startKind = 'camera';
+  }
+
+  if (!window.isSecureContext) {
+    setStatus('This page must be served over HTTPS (or localhost).');
+    showHttpsReloadHint();
+    return;
   }
 
   try {
@@ -459,23 +678,45 @@ async function init() {
     coinTemplate.position.sub(center);
   } catch (e) {
     setStatus(`Failed to load coin model: ${e.message || e}`);
-    btnStart.disabled = true;
     return;
   }
 
-  btnStart.disabled = !arOk;
-  if (arOk) {
-    setStatus('');
-    clearStatusExtra();
+  if (!ios && 'xr' in navigator && navigator.xr) {
+    try {
+      if (await navigator.xr.isSessionSupported('immersive-ar')) {
+        startKind = 'webxr';
+      }
+    } catch {
+      startKind = 'camera';
+    }
   }
 
+  if (startKind === 'webxr') {
+    setStatus('');
+    clearStatusExtra();
+  } else if (!navigator.mediaDevices?.getUserMedia) {
+    setStatus('Camera mode needs getUserMedia.');
+    clearStatusExtra();
+    statusExtraEl.textContent = ios
+      ? 'Open this page in Safari over HTTPS.'
+      : 'Use a secure https:// URL or a recent browser.';
+    return;
+  } else {
+    setStatus('');
+    clearStatusExtra();
+    if (!ios) {
+      statusExtraEl.textContent =
+        'WebXR immersive AR was not advertised on this browser. Using camera hunt mode instead.';
+    }
+  }
+
+  btnStart.disabled = false;
   btnStart.addEventListener('click', () => {
-    startSession().catch((e) => {
-      setStatus('Session error.');
-      clearStatusExtra();
-      statusExtraEl.textContent = e.message || String(e);
-      btnStart.disabled = false;
-    });
+    onStartClick();
+  });
+
+  btnStop.addEventListener('click', () => {
+    stopPhoneHunt();
   });
 }
 

@@ -3,7 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
-  <meta http-equiv="Permissions-Policy" content="xr-spatial-tracking=(self)" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta http-equiv="Permissions-Policy" content="xr-spatial-tracking=(self), accelerometer=(self), gyroscope=(self), camera=(self)" />
   <title>Coin Hunt AR</title>
   <link rel="stylesheet" href="./styles.css" />
   <script type="importmap">
@@ -16,21 +17,24 @@
   </script>
 </head>
 <body>
+  <video id="cam-feed" class="cam-feed" playsinline muted></video>
   <div id="pre-ar">
     <h1>Coin Hunt AR</h1>
-    <p class="hint">
-      Open this site with <strong>https://</strong> (GitHub Pages does this automatically). Use
-      <strong>Chrome on Android</strong> with ARCore. If you used a LAN IP or <code>http://</code>, WebXR stays hidden.
-      Open in the system browser, not inside Instagram or Facebook in-app browsers.
+    <p class="hint" id="hint-main">
+      Loading…
     </p>
-    <button type="button" id="btn-start" disabled>Start AR</button>
+    <button type="button" id="btn-start" disabled>Start hunt</button>
     <p id="status" class="status" aria-live="polite"></p>
     <p id="status-extra" class="status-extra" aria-live="polite"></p>
   </div>
+  <div id="reticle" class="reticle" aria-hidden="true"></div>
   <div id="dom-overlay-root" class="overlay-root" hidden>
-    <div class="counter-bar">
-      <span class="counter-label">Coins</span>
-      <span id="coin-count" class="counter-value">0</span>
+    <div class="overlay-stack">
+      <div class="counter-bar">
+        <span class="counter-label">Coins</span>
+        <span id="coin-count" class="counter-value">0</span>
+      </div>
+      <button type="button" id="btn-stop" class="btn-stop-overlay" hidden>End hunt</button>
     </div>
   </div>
   <script type="module" src="./main.js"></script>

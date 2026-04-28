@@ -4,17 +4,23 @@ Simple WebXR coin hunt for phones. Coins spawn on detected surfaces in front of 
 
 ## Try it
 
-Use **Chrome on an Android phone** with **ARCore**. Open the site over **HTTPS** (GitHub Pages uses `https://` automatically). Tap **Start AR**, allow permissions, then move toward floating coins.
+### iPhone (Safari)
 
-### If the page says WebXR is missing
+This repo targets **iPhone Safari** with **camera hunt** mode (not WebXR world tracking, which is still unreliable for immersive AR on iOS). Open the **https://** GitHub Pages URL in **Safari** (not inside Instagram or Facebook). Tap **Start hunt**, allow **Motion and Orientation** and **Camera**, then **aim the reticle** at floating coins to collect them. Tap **End hunt** to stop the camera and return to the menu.
 
-WebXR is only available in a **[secure context](https://developer.mozilla.org/en-US/docs/Web/Security/Secure_Contexts)**. Common causes:
+### Android (Chrome)
 
-1. **Not HTTPS** – Opening `http://192.168.x.x:8080` or similar from your PC on the phone is **not** secure; `navigator.xr` stays undefined. Use your **GitHub Pages** URL (`https://<user>.github.io/<repo>/`) or another **https://** host.
-2. **file://** – Opening the HTML file from disk will not run modules or WebXR correctly. Deploy to GitHub Pages or use a local **HTTPS** static server.
-3. **In-app browsers** – Instagram, Facebook, and similar embedded browsers often hide WebXR. Use **Open in Chrome** (or the system browser).
+If the browser reports **WebXR immersive-ar**, the app uses **WebXR** with hit testing so coins anchor on surfaces; walk near them to collect. Otherwise it falls back to the same **camera hunt** mode as on iPhone.
 
-Official background: [Immersive Web WebXR](https://immersiveweb.dev/) and [three.js WebXR](https://threejs.org/docs/#manual/en/introduction/WebXR-and-three.js).
+### Secure context (everyone)
+
+Camera, motion, and WebXR need a **[secure context](https://developer.mozilla.org/en-US/docs/Web/Security/Secure_Contexts)**:
+
+1. **Not HTTPS** – Plain `http://` (including LAN dev URLs) blocks these APIs. Use your **GitHub Pages** `https://<user>.github.io/<repo>/` link.
+2. **file://** – Will not run correctly. Deploy to GitHub Pages or use HTTPS locally.
+3. **In-app browsers** – Often block camera or motion. Use **Open in Safari** or **Open in Chrome**.
+
+More background: [Immersive Web](https://immersiveweb.dev/) and [three.js WebXR](https://threejs.org/docs/#manual/en/introduction/WebXR-and-three.js).
 
 ## Deploy on GitHub Pages
 
