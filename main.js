@@ -41,12 +41,32 @@ function isIOS() {
   );
 }
 
-function setStatus(text) {
+/**
+ * WebXR HUD canvas colors (keep aligned with :root in styles.css)
+ */
+const HUD = {
+  bg: 'rgba(15, 20, 25, 0.78)',
+  border: 'rgba(255, 255, 255, 0.1)',
+  label: '#8b9aac',
+  accent: '#6ee7b7',
+};
+
+function setStatus(text, variant = 'warn') {
   statusEl.textContent = text || '';
+  statusEl.className = 'status' + (text ? ` status--${variant}` : '');
 }
 
 function clearStatusExtra() {
   statusExtraEl.replaceChildren();
+  statusExtraEl.className = 'status-extra';
+}
+
+/** Plain-text secondary line. Use showHttpsReloadHint for the HTTPS link UI. */
+function setStatusExtra(text, variant = 'muted') {
+  clearStatusExtra();
+  if (!text) return;
+  statusExtraEl.textContent = text;
+  statusExtraEl.className = `status-extra status-extra--${variant}`;
 }
 
 function showHttpsReloadHint() {
@@ -59,6 +79,11 @@ function showHttpsReloadHint() {
   line.appendChild(a);
   line.appendChild(document.createTextNode(' so camera and motion APIs work.'));
   statusExtraEl.appendChild(line);
+  statusExtraEl.className = 'status-extra status-extra--muted';
+}
+
+function setPreArLoading(on) {
+  preAr.classList.toggle('pre-ar--loading', Boolean(on));
 }
 
 function updateCounterDisplay() {
@@ -149,15 +174,32 @@ function buildHudFallback() {
 function drawHudFallback() {
   if (!hudCtx || !hudTexture) return;
   const ctx = hudCtx;
-  ctx.clearRect(0, 0, hudCanvas.width, hudCanvas.height);
-  ctx.fillStyle = 'rgba(15,20,25,0.75)';
-  ctx.fillRect(8, 8, hudCanvas.width - 16, hudCanvas.height - 16);
-  ctx.fillStyle = '#9aa7b4';
-  ctx.font = '600 28px system-ui,sans-serif';
-  ctx.fillText('COINS', 32, 52);
-  ctx.fillStyle = '#6ee7b7';
-  ctx.font = '800 48px system-ui,sans-serif';
-  ctx.fillText(String(collected), 32, 102);
+  const w = hudCanvas.width;
+  const h = hudCanvas.height;
+  const pad = 8;
+  const rw = w - pad * 2;
+  const rh = h - pad * 2;
+  const r = rh / 2;
+  ctx.clearRect(0, 0, w, h);
+  ctx.save();
+  ctx.beginPath();
+  if (typeof ctx.roundRect === 'function') {
+    ctx.roundRect(pad, pad, rw, rh, r);
+  } else {
+    ctx.rect(pad, pad, rw, rh);
+  }
+  ctx.fillStyle = HUD.bg;
+  ctx.fill();
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = HUD.border;
+  ctx.stroke();
+  ctx.restore();
+  ctx.fillStyle = HUD.label;
+  ctx.font = '600 26px system-ui,sans-serif';
+  ctx.fillText('COINS', 36, 54);
+  ctx.fillStyle = HUD.accent;
+  ctx.font = '800 46px system-ui,sans-serif';
+  ctx.fillText(String(collected), 36, 104);
   hudTexture.needsUpdate = true;
 }
 
@@ -344,10 +386,10 @@ renderer.setAnimationLoop((timeMs, frame) => {
         xrSession.requestHitTestSource({ space: viewerSpace }).then((source) => {
           hitTestSource = source;
         }).catch(() => {
-          setStatus('Hit test unavailable on this device.');
+          setStatus('Hit test unavailable on this device.', 'warn');
         });
       }).catch(() => {
-        setStatus('Could not create viewer space for hit test.');
+        setStatus('Could not create viewer space for hit test.', 'warn');
       });
     }
 
@@ -424,7 +466,7 @@ async function requestReferenceSpace(session) {
 
 async function startWebXRSession() {
   if (!navigator.xr) {
-    setStatus('WebXR is not exposed in this context.');
+    setStatus('WebXR is not exposed in this context.', 'error');
     return;
   }
 
@@ -432,14 +474,13 @@ async function startWebXRSession() {
   try {
     supported = await navigator.xr.isSessionSupported('immersive-ar');
   } catch (e) {
-    setStatus('Could not query AR support.');
-    clearStatusExtra();
-    statusExtraEl.textContent = e?.message || String(e);
+    setStatus('Could not query AR support.', 'error');
+    setStatusExtra(e?.message || String(e), 'error');
     return;
   }
 
   if (!supported) {
-    setStatus('immersive-ar is not supported here.');
+    setStatus('immersive-ar is not supported here.', 'warn');
     return;
   }
 
@@ -483,9 +524,8 @@ async function startWebXRSession() {
   }
 
   if (!session) {
-    setStatus('Could not start an AR session.');
-    clearStatusExtra();
-    statusExtraEl.textContent = lastErr?.message || String(lastErr);
+    setStatus('Could not start an AR session.', 'error');
+    setStatusExtra(lastErr?.message || String(lastErr), 'error');
     return;
   }
 
@@ -562,7 +602,7 @@ function stopPhoneHunt() {
 
 async function startPhoneHunt() {
   if (!navigator.mediaDevices?.getUserMedia) {
-    setStatus('Camera API not available.');
+    setStatus('Camera API not available.', 'error');
     return;
   }
 
@@ -570,14 +610,13 @@ async function startPhoneHunt() {
     try {
       const perm = await DeviceOrientationEvent.requestPermission();
       if (perm !== 'granted') {
-        setStatus('Motion access was denied.');
-        clearStatusExtra();
-        statusExtraEl.textContent = 'Enable motion in Safari settings or try again and tap Allow.';
+        setStatus('Motion access was denied.', 'error');
+        setStatusExtra('Enable motion in Safari settings or try again and tap Allow.', 'muted');
         return;
       }
     } catch (e) {
-      setStatus('Could not request motion permission.');
-      statusExtraEl.textContent = e?.message || String(e);
+      setStatus('Could not request motion permission.', 'error');
+      setStatusExtra(e?.message || String(e), 'error');
       return;
     }
   }
@@ -588,9 +627,8 @@ async function startPhoneHunt() {
       audio: false,
     });
   } catch (e) {
-    setStatus('Camera was blocked or unavailable.');
-    clearStatusExtra();
-    statusExtraEl.textContent = e?.message || String(e);
+    setStatus('Camera was blocked or unavailable.', 'error');
+    setStatusExtra(e?.message || String(e), 'error');
     return;
   }
 
@@ -599,8 +637,8 @@ async function startPhoneHunt() {
     await videoEl.play();
   } catch (e) {
     stopMedia();
-    setStatus('Could not start the camera preview.');
-    statusExtraEl.textContent = e?.message || String(e);
+    setStatus('Could not start the camera preview.', 'error');
+    setStatusExtra(e?.message || String(e), 'error');
     return;
   }
 
@@ -640,9 +678,8 @@ async function onStartClick() {
       await startPhoneHunt();
     }
   } catch (e) {
-    setStatus('Could not start.');
-    clearStatusExtra();
-    statusExtraEl.textContent = e?.message || String(e);
+    setStatus('Could not start.', 'error');
+    setStatusExtra(e?.message || String(e), 'error');
     btnStart.disabled = false;
   }
 }
@@ -665,7 +702,8 @@ async function init() {
   }
 
   if (!window.isSecureContext) {
-    setStatus('This page must be served over HTTPS (or localhost).');
+    setPreArLoading(false);
+    setStatus('This page must be served over HTTPS (or localhost).', 'error');
     showHttpsReloadHint();
     return;
   }
@@ -677,7 +715,8 @@ async function init() {
     const center = box.getCenter(new THREE.Vector3());
     coinTemplate.position.sub(center);
   } catch (e) {
-    setStatus(`Failed to load coin model: ${e.message || e}`);
+    setPreArLoading(false);
+    setStatus(`Failed to load coin model: ${e.message || e}`, 'error');
     return;
   }
 
@@ -695,21 +734,22 @@ async function init() {
     setStatus('');
     clearStatusExtra();
   } else if (!navigator.mediaDevices?.getUserMedia) {
-    setStatus('Camera mode needs getUserMedia.');
-    clearStatusExtra();
-    statusExtraEl.textContent = ios
-      ? 'Open this page in Safari over HTTPS.'
-      : 'Use a secure https:// URL or a recent browser.';
+    setPreArLoading(false);
+    setStatus('Camera mode needs getUserMedia.', 'warn');
+    setStatusExtra(
+      ios ? 'Open this page in Safari over HTTPS.' : 'Use a secure https:// URL or a recent browser.',
+      'muted',
+    );
     return;
   } else {
     setStatus('');
     clearStatusExtra();
     if (!ios) {
-      statusExtraEl.textContent =
-        'WebXR immersive AR was not advertised on this browser. Using camera hunt mode instead.';
+      setStatusExtra('WebXR immersive AR was not advertised on this browser. Using camera hunt mode instead.', 'muted');
     }
   }
 
+  setPreArLoading(false);
   btnStart.disabled = false;
   btnStart.addEventListener('click', () => {
     onStartClick();

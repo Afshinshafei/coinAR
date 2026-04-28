@@ -6,6 +6,9 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta http-equiv="Permissions-Policy" content="xr-spatial-tracking=(self), accelerometer=(self), gyroscope=(self), camera=(self)" />
   <title>Coin Hunt AR</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="./styles.css" />
   <script type="importmap">
   {
@@ -18,16 +21,21 @@
 </head>
 <body>
   <video id="cam-feed" class="cam-feed" playsinline muted></video>
-  <div id="pre-ar">
-    <h1>Coin Hunt AR</h1>
-    <p class="hint" id="hint-main">
-      Loading…
-    </p>
-    <button type="button" id="btn-start" disabled>Start hunt</button>
-    <p id="status" class="status" aria-live="polite"></p>
-    <p id="status-extra" class="status-extra" aria-live="polite"></p>
+  <div id="pre-ar" class="pre-ar pre-ar--loading">
+    <div class="pre-ar-card">
+      <p class="pre-ar-kicker" aria-hidden="true">Augmented reality</p>
+      <h1>Coin Hunt AR</h1>
+      <p class="hint" id="hint-main">Preparing your hunt…</p>
+      <div class="start-wrap">
+        <button type="button" id="btn-start" class="btn-primary" disabled>Start hunt</button>
+      </div>
+      <p id="status" class="status" aria-live="polite"></p>
+      <p id="status-extra" class="status-extra" aria-live="polite"></p>
+    </div>
   </div>
-  <div id="reticle" class="reticle" aria-hidden="true"></div>
+  <div id="reticle" class="reticle" aria-hidden="true">
+    <span class="reticle-ring"></span>
+  </div>
   <div id="dom-overlay-root" class="overlay-root" hidden>
     <div class="overlay-stack">
       <div class="counter-bar">
