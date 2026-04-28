@@ -8,13 +8,14 @@ Use **Chrome on an Android phone** with **ARCore**. Open the site over **HTTPS**
 
 ## Deploy on GitHub Pages
 
-This repo includes a **GitHub Actions** workflow (`.github/workflows/deploy-pages.yml`) that publishes the site on every push to `main`.
+Static files live at the repo root (`index.html`, `main.js`, `styles.css`, `coind3d.glb`). Use **Deploy from a branch** (no build step required).
 
-1. Push the `main` branch to GitHub.
-2. Open **Settings → Pages** for the repository. Under **Build and deployment**, set **Source** to **GitHub Actions** (not "Deploy from a branch", unless you prefer that method instead).
-3. After the workflow runs, the app URL will be either:
-   - **Project site:** `https://<username>.github.io/<repository>/`
-   - **User site:** `https://<username>.github.io/` (only if this repo is named `<username>.github.io`)
+1. On GitHub: **Settings → Pages** for this repository.
+2. Under **Build and deployment**, set **Source** to **Deploy from a branch**.
+3. Choose branch **main** and folder **/ (root)**, then save.
+4. After a minute, the site is available at **https://afshinshafei.github.io/coinAR/** (project Pages URL for this repo).
+
+For a **user/org site** instead (`https://<username>.github.io/` only), the repo must be named `<username>.github.io`.
 
 ### Base path and assets
 
